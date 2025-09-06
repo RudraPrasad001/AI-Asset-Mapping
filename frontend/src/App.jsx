@@ -1,15 +1,21 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { MapContainer, TileLayer, GeoJSON, Circle, Marker, Popup } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import axios from "axios";
 
 function App() {
-  const [inputJson, setInputJson] = useState(JSON.stringify({
-    name: "TestArea",
-    latitude: 17.385,
-    longitude: 78.4867,
-    area_sq_m: 5000000
-  }, null, 2));
+  const [inputJson, setInputJson] = useState(
+    JSON.stringify(
+      {
+        name: "TestArea",
+        latitude: 17.385,
+        longitude: 78.4867,
+        area_sq_m: 5000000,
+      },
+      null,
+      2
+    )
+  );
   const [summary, setSummary] = useState(null);
   const [layers, setLayers] = useState(null);
   const [aoiRadius, setAoiRadius] = useState(null);
@@ -33,15 +39,18 @@ function App() {
 
   function styleByClass(feature) {
     const cls = (feature?.properties?.class || "").toLowerCase();
-    if (cls === "water") return { color: "#1e90ff", fillColor: "#1e90ff", fillOpacity: 0.5 };
-    if (cls === "agriculture") return { color: "#8b4513", fillColor: "#8b4513", fillOpacity: 0.45 };
-    if (cls === "forest") return { color: "#228b22", fillColor: "#228b22", fillOpacity: 0.45 };
-    if (cls === "infrastructure") return { color: "#808080", fillColor: "#808080", fillOpacity: 0.35 };
+    if (cls === "water")
+      return { color: "#1e90ff", fillColor: "#1e90ff", fillOpacity: 0.5 };
+    if (cls === "agriculture")
+      return { color: "#8b4513", fillColor: "#8b4513", fillOpacity: 0.45 };
+    if (cls === "forest")
+      return { color: "#228b22", fillColor: "#228b22", fillOpacity: 0.45 };
+    if (cls === "infrastructure")
+      return { color: "#808080", fillColor: "#808080", fillOpacity: 0.35 };
     return { color: "#000", fillColor: "#000", fillOpacity: 0.2 };
   }
 
-  // Add effect to automatically analyze when JSON changes
-  React.useEffect(() => {
+  useEffect(() => {
     const timeoutId = setTimeout(() => {
       try {
         JSON.parse(inputJson); // Validate JSON
@@ -56,40 +65,71 @@ function App() {
 
   return (
     <div style={{ display: "flex", height: "100vh" }}>
-      <div style={{ width: "380px", padding: 12, borderRight: "1px solid #ddd", overflow: "auto" }}>
+      <div
+        style={{
+          width: "380px",
+          padding: 12,
+          borderRight: "1px solid #ddd",
+          overflow: "auto",
+        }}
+      >
         <h2>AOI Mapper</h2>
         <p>Provide input JSON below to automatically analyze the area.</p>
-        <textarea 
-          style={{ 
-            width: "100%", 
+        <textarea
+          style={{
+            width: "100%",
             height: 220,
-            borderColor: error ? 'red' : '#ddd'
-          }} 
-          value={inputJson} 
-          onChange={e => {
+            borderColor: error ? "red" : "#ddd",
+          }}
+          value={inputJson}
+          onChange={(e) => {
             setInputJson(e.target.value);
             setError(null);
-          }} 
+          }}
         />
-        {error && <p style={{ color: 'red', marginTop: 4 }}>{error}</p>}
+        {error && (
+          <p style={{ color: "red", marginTop: 4 }}>{error}</p>
+        )}
 
         {summary && (
           <div style={{ marginTop: 12 }}>
             <h3>Summary</h3>
-            <pre style={{ background: "#f7f7f7", padding: 10 }}>{JSON.stringify(summary, null, 2)}</pre>
-            <a href={"data:application/json;charset=utf-8," + encodeURIComponent(JSON.stringify(summary, null, 2))} download={`${summary.name}_summary.json`}>Download Summary JSON</a>
+            <pre style={{ background: "#f7f7f7", padding: 10 }}>
+              {JSON.stringify(summary, null, 2)}
+            </pre>
+            <a
+              href={
+                "data:application/json;charset=utf-8," +
+                encodeURIComponent(JSON.stringify(summary, null, 2))
+              }
+              download={`${summary.name}_summary.json`}
+            >
+              Download Summary JSON
+            </a>
           </div>
         )}
       </div>
 
       <div style={{ flex: 1 }}>
-        <MapContainer center={[17.385, 78.4867]} zoom={12} style={{ height: "100%", width: "100%" }}>
+        <MapContainer
+          center={[17.385, 78.4867]}
+          zoom={12}
+          style={{ height: "100%", width: "100%" }}
+        >
           <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-          {aoiCenter && aoiRadius && <Circle center={aoiCenter} radius={aoiRadius} pathOptions={{color: "#000", fillOpacity:0.02}} />}
-          {aoiCenter && <Marker position={aoiCenter}><Popup>{summary?summary.name:"AOI"}</Popup></Marker>}
-          {layers && layers.water && (
-            <GeoJSON data={layers.water} style={styleByClass} />
+          {aoiCenter && aoiRadius && (
+            <Circle
+              center={aoiCenter}
+              radius={aoiRadius}
+              pathOptions={{ color: "#000", fillOpacity: 0.02 }}
+            />
           )}
+          {aoiCenter && (
+            <Marker position={aoiCenter}>
+              <Popup>{summary ? summary.name : "AOI"}</Popup>
+            </Marker>
+          )}
+          {layers && layers.water && <GeoJSON data={layers.water} style={styleByClass} />}
           {layers && layers.agriculture && (
             <GeoJSON data={layers.agriculture} style={styleByClass} />
           )}
