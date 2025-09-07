@@ -49,7 +49,7 @@ function getLayerColor(layerClass) {
 const AOIMapper = () => {
   let apiEndpoint = "http://localhost:8000";
   let backend = "http://localhost:5000";
-  const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiZ21haWwiOiJSdWRyYUBnbWFpbC5jb20iLCJyb2xlIjoiYWRtaW4iLCJpYXQiOjE3NTcyMzM2NjksImV4cCI6MTc1NzIzNzI2OX0.znlvhgU_1uil8-LB7cYzJihZomRm_qeJOlWUPxB88V4"; // replace with real token
+  const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiZ21haWwiOiJSdWRyYUBnbWFpbC5jb20iLCJyb2xlIjoiYWRtaW4iLCJpYXQiOjE3NTcyMzgwNzIsImV4cCI6MTc1NzI0MTY3Mn0.SuJaEOvp07CiftXNj3fMD-nRXVcISyL-Ko7iqpL5E1Q"; // replace with real token
 
   const [aoiInputs, setAoiInputs] = useState([]);
   const [aoiResults, setAoiResults] = useState([]);
@@ -102,7 +102,8 @@ const AOIMapper = () => {
       setStatus(`Analyzing ${input.name}...`);
 
       try {
-        const res = await axios.post(
+        // First get the geographical analysis
+        const analysisRes = await axios.post(
           `${apiEndpoint}/api/aoi/analyze`,
           input,
           {
@@ -111,7 +112,32 @@ const AOIMapper = () => {
             },
           }
         );
-        return res.data;
+
+        // Prepare data for DSS API
+        const dssInput = {
+          total_area_sq_m: analysisRes.data.summary.total_area_sq_m,
+          agriculture_area_sq_m: analysisRes.data.summary.agriculture_area_sq_m || 0,
+          water_area_sq_m: analysisRes.data.summary.water_area_sq_m || 0,
+          forest_area_sq_m: analysisRes.data.summary.forest_area_sq_m || 0,
+          infrastructure_area_sq_m: analysisRes.data.summary.infrastructure_area_sq_m || 0
+        };
+
+        // Get scheme recommendations
+        const dssRes = await axios.post(
+          `${apiEndpoint}/dss`,
+          dssInput,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        // Return combined data
+        return {
+          ...analysisRes.data,
+          schemes: dssRes.data
+        };
       } catch (err) {
         console.error(`Error analyzing ${input.name}:`, err);
         return null;
@@ -197,6 +223,19 @@ const AOIMapper = () => {
                         </div>
                       )
                     ))}
+                    
+                    {selectedAoi.schemes && selectedAoi.schemes.length > 0 && (
+                      <div style={{ marginTop: "12px", borderTop: "1px solid #ddd", paddingTop: "8px" }}>
+                        <strong>Recommended Schemes:</strong>
+                        {selectedAoi.schemes.filter(scheme => scheme.eligible).map((scheme, i) => (
+                          <div key={i} style={{ marginTop: "4px", padding: "4px", backgroundColor: "white", borderRadius: "4px" }}>
+                            <div style={{ fontWeight: "bold", color: "#2c5282" }}>{scheme.scheme}</div>
+                            <div style={{ fontSize: "0.8em" }}>Score: {scheme.score}%</div>
+                            <div style={{ fontSize: "0.8em", color: "#666" }}>{scheme.reason}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </button>
