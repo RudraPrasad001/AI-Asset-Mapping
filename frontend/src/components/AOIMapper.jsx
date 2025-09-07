@@ -46,33 +46,54 @@ function getLayerColor(layerClass) {
       return '#000000';
   }
 }
-
 const AOIMapper = () => {
-
   let apiEndpoint = "http://localhost:8000";
+  let backend = "http://localhost:5000";
+  const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiZ21haWwiOiJSdWRyYUBnbWFpbC5jb20iLCJyb2xlIjoiYWRtaW4iLCJpYXQiOjE3NTcyMzM2NjksImV4cCI6MTc1NzIzNzI2OX0.znlvhgU_1uil8-LB7cYzJihZomRm_qeJOlWUPxB88V4"; // replace with real token
 
-  const initialAreas = [
-    {
-      name: "Hyderabad Area",
-      latitude: 17.385,
-      longitude: 78.4867,
-      area_sq_m: 5000000
-    },
-    {
-      name: "Delhi Region",
-      latitude: 28.6139,
-      longitude: 77.209,
-      area_sq_m: 3000000
-    }
-  ];
-
-  const [aoiInputs, setAoiInputs] = useState(initialAreas);
+  const [aoiInputs, setAoiInputs] = useState([]);
   const [aoiResults, setAoiResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
   const [selectedAoiIndex, setSelectedAoiIndex] = useState(0);
   const [mapKey, setMapKey] = useState(0);
 
+  // fetch initial AOI list from your API
+  useEffect(() => {
+  const fetchAOIs = async () => {
+    setLoading(true);
+    setStatus("Fetching AOIs...");
+
+    try {
+      const res = await axios.get(`${backend}/api/patta/stats/districts-area`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      // normalize strings → numbers
+      const normalized = res.data.map(item => ({
+        ...item,
+        latitude: Number(item.latitude),
+        longitude: Number(item.longitude),
+        area_sq_m: Number(item.area_sq_m),
+      }));
+
+      setAoiInputs(normalized);
+      setStatus("AOIs loaded successfully");
+    } catch (err) {
+      console.error("Error fetching AOIs:", err);
+      setStatus("Failed to fetch AOIs");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  fetchAOIs();
+}, [backend, token]);
+
+
+  // analyze selected AOI
   useEffect(() => {
     if (aoiInputs.length === 0) return;
 
@@ -81,11 +102,18 @@ const AOIMapper = () => {
       setStatus(`Analyzing ${input.name}...`);
 
       try {
-        const res = await axios.post(`${apiEndpoint}/api/aoi/analyze`, input);
+        const res = await axios.post(
+          `${apiEndpoint}/api/aoi/analyze`,
+          input,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
         return res.data;
       } catch (err) {
         console.error(`Error analyzing ${input.name}:`, err);
-        onError?.(err);
         return null;
       }
     };
@@ -93,21 +121,20 @@ const AOIMapper = () => {
     const selectedInput = aoiInputs[selectedAoiIndex];
     if (!selectedInput) return;
 
-    analyzeArea(selectedInput).then(result => {
+    analyzeArea(selectedInput).then((result) => {
       if (result) {
-        setAoiResults(prevResults => {
+        setAoiResults((prevResults) => {
           const newResults = [...prevResults];
           newResults[selectedAoiIndex] = result;
           return newResults;
         });
         setStatus(`Analysis complete for ${selectedInput.name}`);
-        console.log(result);
       } else {
         setStatus("Analysis failed. Please try again.");
       }
       setLoading(false);
     });
-  }, [selectedAoiIndex, aoiInputs, apiEndpoint]);
+  }, [selectedAoiIndex, aoiInputs, apiEndpoint, token]);
 
   const selectedAoi = aoiResults[selectedAoiIndex];
   const selectedInput = aoiInputs[selectedAoiIndex];
