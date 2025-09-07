@@ -1,143 +1,233 @@
 import React, { useState, useEffect } from "react";
-import { MapContainer, TileLayer, GeoJSON, Circle, Marker, Popup } from "react-leaflet";
+import {
+  MapContainer,
+  TileLayer,
+  GeoJSON,
+  Circle,
+  Marker,
+  Popup,
+  useMap,
+} from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import axios from "axios";
 
-function App() {
-  const [inputJson, setInputJson] = useState(
-    JSON.stringify(
-      {
-        name: "TestArea",
-        latitude: 17.385,
-        longitude: 78.4867,
-        area_sq_m: 5000000,
-      },
-      null,
-      2
-    )
-  );
-  const [summary, setSummary] = useState(null);
-  const [layers, setLayers] = useState(null);
-  const [aoiRadius, setAoiRadius] = useState(null);
-  const [aoiCenter, setAoiCenter] = useState(null);
-  const [error, setError] = useState(null);
-
-  async function analyze() {
-    try {
-      const payload = JSON.parse(inputJson);
-      const res = await axios.post("http://127.0.0.1:8000/analyze", payload);
-      setSummary(res.data.summary);
-      setLayers(res.data.layers);
-      const r = Math.sqrt(payload.area_sq_m / Math.PI);
-      setAoiRadius(r);
-      setAoiCenter([payload.latitude, payload.longitude]);
-    } catch (err) {
-      alert("Error: " + (err.response?.data?.detail || err.message));
-      console.error(err);
+// --- FlyTo helper ---
+function FlyToController({ center, radius, trigger }) {
+  const map = useMap();
+  useEffect(() => {
+    if (center && radius) {
+      map.flyTo(center, zoomFromRadiusMeters(radius), { duration: 1 });
     }
-  }
+  }, [center, radius, trigger, map]);
+  return null;
+}
 
-  function styleByClass(feature) {
-    const cls = (feature?.properties?.class || "").toLowerCase();
-    if (cls === "water")
-      return { color: "#1e90ff", fillColor: "#1e90ff", fillOpacity: 0.5 };
-    if (cls === "agriculture")
-      return { color: "#8b4513", fillColor: "#8b4513", fillOpacity: 0.45 };
-    if (cls === "forest")
-      return { color: "#228b22", fillColor: "#228b22", fillOpacity: 0.45 };
-    if (cls === "infrastructure")
-      return { color: "#808080", fillColor: "#808080", fillOpacity: 0.35 };
-    return { color: "#000", fillColor: "#000", fillOpacity: 0.2 };
+// Heuristic zoom based on radius
+function zoomFromRadiusMeters(r) {
+  if (r >= 15000) return 10;
+  if (r >= 8000) return 11;
+  if (r >= 4000) return 12;
+  if (r >= 2000) return 13;
+  return 14;
+}
+
+// Get color based on layer class
+function getLayerColor(layerClass) {
+  switch (layerClass) {
+    case 'water':
+      return '#1e90ff';
+    case 'agriculture':
+      return '#8b4513';
+    case 'forest':
+      return '#228b22';
+    case 'infrastructure':
+      return '#808080';
+    default:
+      return '#000000';
   }
+}
+
+function App() {
+  const [aoiInputs, setAoiInputs] = useState([]);
+  const [aoiResults, setAoiResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState("");
+  const [selectedAoiIndex, setSelectedAoiIndex] = useState(0);
+  const [mapKey, setMapKey] = useState(0); // For map reset optimization
 
   useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      try {
-        JSON.parse(inputJson); // Validate JSON
-        analyze();
-      } catch (err) {
-        setError("Invalid JSON format");
-      }
-    }, 1000); // Wait 1 second after last change before analyzing
+    // Dummy API call to fetch AOI inputs
+    const fetchAoiInputs = async () => {
+      const dummyData = [
+        {
+          name: "Location 1",
+          latitude: 17.385,
+          longitude: 78.4867,
+          area_sq_m: 5000000,
+        },
+        {
+          name: "Location 2",
+          latitude: 28.6139,
+          longitude: 77.209,
+          area_sq_m: 3000000,
+        },
+      ];
+      // Simulate network delay
+      await new Promise((res) => setTimeout(res, 1000));
+      setAoiInputs(dummyData);
+    };
 
-    return () => clearTimeout(timeoutId);
-  }, [inputJson]);
+    fetchAoiInputs();
+  }, []);
+
+  useEffect(() => {
+    if (aoiInputs.length === 0) return;
+
+    const analyzeArea = async (input) => {
+      setLoading(true);
+      setStatus(`Analyzing ${input.name}...`);
+
+      try {
+        const res = await axios.post("http://127.0.0.1:8000/analyze", input);
+        return res.data;
+      } catch (err) {
+        console.error(`Error analyzing ${input.name}:`, err);
+        return null;
+      }
+    };
+
+    // Only analyze the selected area
+    const selectedInput = aoiInputs[selectedAoiIndex];
+    if (!selectedInput) return;
+
+    analyzeArea(selectedInput).then(result => {
+      if (result) {
+        setAoiResults(prevResults => {
+          const newResults = [...prevResults];
+          newResults[selectedAoiIndex] = result;
+          return newResults;
+        });
+        setStatus(`Analysis complete for ${selectedInput.name}`);
+      } else {
+        setStatus("Analysis failed. Please try again.");
+      }
+      setLoading(false);
+    });
+  }, [selectedAoiIndex, aoiInputs]);
+
+  const selectedAoi = aoiResults.length > 0 ? aoiResults[selectedAoiIndex] : null;
+  const selectedInput = aoiInputs[selectedAoiIndex];
+
+  const center = selectedInput
+    ? [selectedInput.latitude, selectedInput.longitude]
+    : [17.385, 78.4867];
+
+  const radius = selectedInput
+    ? Math.sqrt(selectedInput.area_sq_m / Math.PI)
+    : null;
 
   return (
     <div style={{ display: "flex", height: "100vh" }}>
       <div
         style={{
-          width: "380px",
-          padding: 12,
+          width: "300px",
+          padding: "20px",
           borderRight: "1px solid #ddd",
-          overflow: "auto",
+          overflowY: "auto",
+          backgroundColor: "#f5f5f5",
         }}
       >
-        <h2>AOI Mapper</h2>
-        <p>Provide input JSON below to automatically analyze the area.</p>
-        <textarea
-          style={{
-            width: "100%",
-            height: 220,
-            borderColor: error ? "red" : "#ddd",
-          }}
-          value={inputJson}
-          onChange={(e) => {
-            setInputJson(e.target.value);
-            setError(null);
-          }}
-        />
-        {error && (
-          <p style={{ color: "red", marginTop: 4 }}>{error}</p>
+        <h2 style={{ marginBottom: "20px" }}>AOI Locations</h2>
+        {loading && (
+          <div style={{ color: "#666" }}>
+            <p>{status}</p>
+          </div>
         )}
-
-        {summary && (
-          <div style={{ marginTop: 12 }}>
-            <h3>Summary</h3>
-            <pre style={{ background: "#f7f7f7", padding: 10 }}>
-              {JSON.stringify(summary, null, 2)}
-            </pre>
-            <a
-              href={
-                "data:application/json;charset=utf-8," +
-                encodeURIComponent(JSON.stringify(summary, null, 2))
-              }
-              download={`${summary.name}_summary.json`}
-            >
-              Download Summary JSON
-            </a>
+        {!loading && aoiInputs.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+            {aoiInputs.map((aoi, index) => (
+              <button
+                key={index}
+                onClick={() => setSelectedAoiIndex(index)}
+                style={{
+                  padding: "15px",
+                  border: "1px solid #ddd",
+                  borderRadius: "6px",
+                  backgroundColor: selectedAoiIndex === index ? "#e0e0e0" : "white",
+                  cursor: "pointer",
+                  textAlign: "left",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "5px",
+                  transition: "all 0.2s ease",
+                  boxShadow: selectedAoiIndex === index ? "0 2px 4px rgba(0,0,0,0.1)" : "none"
+                }}
+              >
+                <strong>{aoi.name}</strong>
+                <small style={{ color: "#666" }}>
+                  {aoi.latitude.toFixed(4)}, {aoi.longitude.toFixed(4)}
+                </small>
+                {selectedAoiIndex === index && selectedAoi && (
+                  <div style={{ marginTop: "8px", fontSize: "0.9em", color: "#444" }}>
+                    {selectedAoi.summary && Object.entries(selectedAoi.summary).map(([key, value]) => (
+                      key !== "name" && (
+                        <div key={key}>
+                          <strong>{key}:</strong> {typeof value === 'number' ? value.toFixed(2) : value}
+                        </div>
+                      )
+                    ))}
+                  </div>
+                )}
+              </button>
+            ))}
           </div>
         )}
       </div>
 
       <div style={{ flex: 1 }}>
         <MapContainer
-          center={[17.385, 78.4867]}
+          key={mapKey}
+          center={center}
           zoom={12}
           style={{ height: "100%", width: "100%" }}
         >
           <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-          {aoiCenter && aoiRadius && (
-            <Circle
-              center={aoiCenter}
-              radius={aoiRadius}
-              pathOptions={{ color: "#000", fillOpacity: 0.02 }}
-            />
-          )}
-          {aoiCenter && (
-            <Marker position={aoiCenter}>
-              <Popup>{summary ? summary.name : "AOI"}</Popup>
-            </Marker>
-          )}
-          {layers && layers.water && <GeoJSON data={layers.water} style={styleByClass} />}
-          {layers && layers.agriculture && (
-            <GeoJSON data={layers.agriculture} style={styleByClass} />
-          )}
-          {layers && layers.forest && (
-            <GeoJSON data={layers.forest} style={styleByClass} />
-          )}
-          {layers && layers.infrastructure && (
-            <GeoJSON data={layers.infrastructure} style={styleByClass} />
+
+          {/* Auto-fly to selected AOI */}
+          <FlyToController
+            center={center}
+            radius={radius}
+            trigger={selectedAoiIndex}
+          />
+
+          {selectedAoi && (
+            <>
+              <Circle
+                center={center}
+                radius={radius}
+                pathOptions={{ color: "#000", fillOpacity: 0.02 }}
+              />
+              <Marker position={center}>
+                <Popup>{selectedAoi.summary.name}</Popup>
+              </Marker>
+
+              {selectedAoi.layers && selectedAoi.layers.map((layer, index) => {
+                const layerClass = (layer.properties?.class || "").toLowerCase();
+                const style = {
+                  color: getLayerColor(layerClass),
+                  fillColor: getLayerColor(layerClass),
+                  fillOpacity: 0.5,
+                  weight: 2
+                };
+                return (
+                  <GeoJSON
+                    key={index}
+                    data={layer}
+                    style={style}
+                  />
+                );
+              })}
+            </>
           )}
         </MapContainer>
       </div>
